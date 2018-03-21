@@ -43,14 +43,14 @@ namespace mavlinkcom {
         // wait for it to settle down with dz delta, and dvz delta velocity.
         AsyncResult<bool> waitForAltitude(float z, float dz, float dvz);
 
-        // request OFFBOARD control.  
+        // request OFFBOARD (PX4) or GUIDED (ArduPilot) control.
         void requestControl();
-        // release OFFBOARD control
+        // release OFFBOARD (PX4) or GUIDED (ArduPilot) control
         void releaseControl();
-        // return true if we still have offboard control (can lose this if user flips the switch).
+        // return true if we still have offboard/guided control (can lose this if user flips the switch).
         bool hasOffboardControl();
 
-        // offboard control methods.
+        // offboard/guided control methods.
         bool isLocalControlSupported();
         void moveToLocalPosition(float x, float y, float z, bool isYaw, float yawOrRate);
         void moveToGlobalPosition(float lat, float lon, float alt, bool isYaw, float yawOrRate);

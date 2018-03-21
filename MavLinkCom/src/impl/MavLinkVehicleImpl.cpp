@@ -55,6 +55,42 @@ enum PX4_CUSTOM_SUB_MODE_AUTO {
     PX4_CUSTOM_SUB_MODE_AUTO_FOLLOW_TARGET = 8
 };
 
+enum ARDUPILOT_COPTER_MODE {
+    ARDUPILOT_COPTER_MODE_STABILIZE =     0,  // manual airframe angle with manual throttle
+    ARDUPILOT_COPTER_MODE_ACRO =          1,  // manual body-frame angular rate with manual throttle
+    ARDUPILOT_COPTER_MODE_ALT_HOLD =      2,  // manual airframe angle with automatic throttle
+    ARDUPILOT_COPTER_MODE_AUTO =          3,  // fully automatic waypoint control using mission commands
+    ARDUPILOT_COPTER_MODE_GUIDED =        4,  // fully automatic fly to coordinate or fly at velocity/direction using GCS immediate commands
+    ARDUPILOT_COPTER_MODE_LOITER =        5,  // automatic horizontal acceleration with automatic throttle
+    ARDUPILOT_COPTER_MODE_RTL =           6,  // automatic return to launching point
+    ARDUPILOT_COPTER_MODE_CIRCLE =        7,  // automatic circular flight with automatic throttle
+    ARDUPILOT_COPTER_MODE_LAND =          9,  // automatic landing with horizontal position control
+    ARDUPILOT_COPTER_MODE_DRIFT =        11,  // semi-automous position, yaw and throttle control
+    ARDUPILOT_COPTER_MODE_SPORT =        13,  // manual earth-frame angular rate control with manual throttle
+    ARDUPILOT_COPTER_MODE_FLIP =         14,  // automatically flip the vehicle on the roll axis
+    ARDUPILOT_COPTER_MODE_AUTOTUNE =     15,  // automatically tune the vehicle's roll and pitch gains
+    ARDUPILOT_COPTER_MODE_POSHOLD =      16,  // automatic position hold with manual override, with automatic throttle
+    ARDUPILOT_COPTER_MODE_BRAKE =        17,  // full-brake using inertial/GPS system, no pilot input
+    ARDUPILOT_COPTER_MODE_THROW =        18,  // throw to launch mode using inertial/GPS system, no pilot input
+    ARDUPILOT_COPTER_MODE_AVOID_ADSB =   19,  // automatic avoidance of obstacles in the macro scale - e.g. full-sized aircraft
+    ARDUPILOT_COPTER_MODE_GUIDED_NOGPS = 20,  // guided mode but only accepts attitude and altitude
+    ARDUPILOT_COPTER_MODE_SMART_RTL =    21,  // SMART_RTL returns to home by retracing its steps
+    ARDUPILOT_COPTER_MODE_FLOWHOLD  =    22,  // FLOWHOLD holds position with optical flow without rangefinder
+    ARDUPILOT_COPTER_MODE_FOLLOW    =    23,  // follow attempts to follow another vehicle or ground station
+};
+
+enum ARDUPILOT_ROVER_MODE {
+    ARDUPILOT_ROVER_MANUAL       = 0,
+    ARDUPILOT_ROVER_ACRO         = 1,
+    ARDUPILOT_ROVER_STEERING     = 3,
+    ARDUPILOT_ROVER_HOLD         = 4,
+    ARDUPILOT_ROVER_AUTO         = 10,
+    ARDUPILOT_ROVER_RTL          = 11,
+    ARDUPILOT_ROVER_SMART_RTL    = 12,
+    ARDUPILOT_ROVER_GUIDED       = 15,
+    ARDUPILOT_ROVER_INITIALISING = 16
+};
+
 // ------------------------------------------------------------------------------
 //   Defines
 // ------------------------------------------------------------------------------
@@ -172,29 +208,56 @@ void MavLinkVehicleImpl::handleMessage(std::shared_ptr<MavLinkConnection> connec
             state_version_++;
             vehicle_state_.controls.armed = armed;
         }
-        if (heartbeat.autopilot == static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4)) {
-            int custom = (heartbeat.custom_mode >> 16);
-            int mode = (custom & 0xff);
-            int submode = (custom >> 8);
+        switch (heartbeat.autopilot) {
+            case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
+                int custom = (heartbeat.custom_mode >> 16);
+                int mode = (custom & 0xff);
+                int submode = (custom >> 8);
 
-            bool isOffboard = (mode == PX4_CUSTOM_MAIN_MODE_OFFBOARD);
-            if (vehicle_state_.controls.offboard != isOffboard) {
-                vehicle_state_.controls.offboard = isOffboard;
-                Utils::log("MavLinkVehicle: is no longer in offboard mode\n");
-            }
-            if (!isOffboard && (requested_mode_ != custom) && (custom != previous_mode_)) {
-                if (control_request_sent_) {
-                    // user may have changed modes on us! So we need to honor that and not
-                    // try and take it back.
-                    vehicle_state_.controls.offboard = false;
-                    control_requested_ = false;
-                    control_request_sent_ = false;
-
-                    Utils::log(Utils::stringf("MavLinkVehicle: detected mode change (mode=%d, submode=%d), will stop trying to do offboard control\n",
-                        mode, submode));
+                bool isOffboard = (mode == PX4_CUSTOM_MAIN_MODE_OFFBOARD);
+                if (vehicle_state_.controls.offboard != isOffboard) {
+                    vehicle_state_.controls.offboard = isOffboard;
+                    Utils::log("MavLinkVehicle: is no longer in offboard mode\n");
                 }
+                if (!isOffboard && (requested_mode_ != custom) && (custom != previous_mode_)) {
+                    if (control_request_sent_) {
+                        // user may have changed modes on us! So we need to honor that and not
+                        // try and take it back.
+                        vehicle_state_.controls.offboard = false;
+                        control_requested_ = false;
+                        control_request_sent_ = false;
+
+                        Utils::log(Utils::stringf("MavLinkVehicle: detected mode change (mode=%d, submode=%d), will stop trying to do offboard control\n",
+                                                  mode, submode));
+                    }
+                }
+                previous_mode_ = custom;
+                break;
             }
-            previous_mode_ = custom;
+            case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
+                int custom = (heartbeat.custom_mode >> 16);
+                int mode = (custom & 0xff);
+                int submode = (custom >> 8);
+                bool isGuided = (mode == ARDUPILOT_COPTER_MODE_GUIDED) || (mode == ARDUPILOT_ROVER_MODE_GUIDED);
+                if (vehicle_state_.controls.offboard != isGuided) {
+                    vehicle_state_.controls.offboard = isGuided;
+                    Utils::log("MavLinkVehicle: is no longer in GUIDED mode\n");
+                }
+                if (!isGuided && (requested_mode_ != custom) && (custom != previous_mode_)) {
+                    if (control_request_sent_) {
+                        // user may have changed modes on us! So we need to honor that and not
+                        // try and take it back.
+                        vehicle_state_.controls.offboard = false;
+                        control_requested_ = false;
+                        control_request_sent_ = false;
+
+                        Utils::log(Utils::stringf("MavLinkVehicle: detected mode change (mode=%d, submode=%d), will stop trying to do GUIDED control\n",
+                                                  mode, submode));
+                    }
+                }
+                previous_mode_ = custom;
+                break;
+            }
         }
         break;
     }
@@ -385,7 +448,7 @@ void MavLinkVehicleImpl::handleMessage(std::shared_ptr<MavLinkConnection> connec
         }
         break;
     }
-    case MavLinkActuatorControlTarget::kMessageId: { // MAVLINK_MSG_ID_ACTUATOR_CONTROL_TARGE
+    case MavLinkActuatorControlTarget::kMessageId: { // MAVLINK_MSG_ID_ACTUATOR_CONTROL_TARGET
         break;
     }
     case MavLinkStatustext::kMessageId: { // MAVLINK_MSG_ID_STATUSTEXT:
@@ -605,7 +668,6 @@ void MavLinkVehicleImpl::checkOffboard()
 
         Utils::log("MavLinkVehicleImpl::checkOffboard: sending MavCmdNavGuidedEnable \n");		
         // now the command should succeed.
-        bool r = false;
         MavCmdNavGuidedEnable cmd{};
         cmd.OnOff = 1;
         // Note: we can't wait for ACK here, I've tried it.  The ACK takes too long to get back to
@@ -675,7 +737,7 @@ void MavLinkVehicleImpl::moveToGlobalPosition(float lat, float lon, float alt, b
 
 AsyncResult<bool> MavLinkVehicleImpl::setMode(int mode, int customMode, int customSubMode)
 {
-    // this mode change take precedence over offboard mode.
+    // this mode change take precedence over offboard/guided mode.
     control_requested_ = false;
     control_request_sent_ = false;
 
@@ -695,8 +757,20 @@ AsyncResult<bool> MavLinkVehicleImpl::setMode(int mode, int customMode, int cust
 
 AsyncResult<bool>  MavLinkVehicleImpl::setPositionHoldMode()
 {
+    int request_mode;
+    switch (heartbeat.autopilot) {
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
+            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL);
+            break;
+        }
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
+            request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_LOITER);
+            break;
+        }
+    }
     return setMode(static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
-        static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL));
+                   request_mode);
+
 }
 
 AsyncResult<bool> MavLinkVehicleImpl::setStabilizedFlightMode()
@@ -716,6 +790,17 @@ AsyncResult<bool> MavLinkVehicleImpl::setHomePosition(float lat, float lon, floa
 
 AsyncResult<bool> MavLinkVehicleImpl::setMissionMode()
 {
+    int request_mode;
+    switch (heartbeat.autopilot) {
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
+            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL);
+            break;
+        }
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
+            request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_LOITER);
+            break;
+        }
+    }//TODO
     return setMode(static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED) |
         static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_AUTO_ENABLED),
         static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO),
@@ -725,6 +810,17 @@ AsyncResult<bool> MavLinkVehicleImpl::setMissionMode()
 
 AsyncResult<bool> MavLinkVehicleImpl::loiter()
 {
+    int request_mode;
+    switch (heartbeat.autopilot) {
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
+            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL);
+            break;
+        }
+        case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
+            request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_LOITER);
+            break;
+        }
+    }//TODO
     return setMode(static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
         static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO),
         static_cast<int>(PX4_CUSTOM_SUB_MODE_AUTO_LOITER));

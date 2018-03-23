@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-#ifndef msr_airlib_MavLinkDroneController_hpp
-#define msr_airlib_MavLinkDroneController_hpp
+#ifndef msr_airlib_ArduPilotDroneController_hpp
+#define msr_airlib_ArduPilotDroneController_hpp
 
 #include "MavLinkVehicle.hpp"
 #include "MavLinkConnection.hpp"
@@ -35,7 +35,7 @@
 namespace msr { namespace airlib {
 
 
-class MavLinkDroneController : public DroneControllerBase
+class ArduPilotDroneController : public DroneControllerBase
 {
 public:
     typedef msr::airlib::GeoPoint GeoPoint;
@@ -49,35 +49,30 @@ public:
     struct ConnectionInfo {
         /* Default values are requires so uninitialized instance doesn't have random values */
 
-        bool use_serial = true; // false means use UDP instead
-                                //Used to connect via HITL: needed only if use_serial = true
         std::string serial_port = "*";
         int baud_rate = 115200;
 
-        //Used to connect to drone over UDP: needed only if use_serial = false
+        //Used to connect to drone over TCP: needed only if use_serial = false
         std::string ip_address = "127.0.0.1";
-        int ip_port = 14560;
+        int ip_port = 5760;
 
-        // The PX4 SITL app requires receiving drone commands over a different mavlink channel.
-        // So set this to empty string to disable this separate command channel.
+        // The ArduPilot SITL got two udp socket : socket_in to receive the simulator FDM and socket_out that send back the
+        // motors output from the vehicle.
         std::string sitl_ip_address = "127.0.0.1";
-        int sitl_ip_port = 14556;
+        int sitl_socket_in_port = 9003;
+        int sitl_socket_out_port = 9002;
 
         // The log viewer can be on a different machine, so you can configure it's ip address and port here.
         int logviewer_ip_port = 14388;
         int logviewer_ip_sport = 14389; // for logging all messages we send to the vehicle.
         std::string logviewer_ip_address = "127.0.0.1";
 
-        // The QGroundControl app can be on a different machine, so you can configure it's ip address and port here.
-        int qgc_ip_port = 14550;
-        std::string qgc_ip_address = "127.0.0.1";
+        // The GCS app can be on a different machine, so you can configure it's ip address and port here.
+        int gcs_ip_port = 14550;
+        std::string gcs_ip_address = "127.0.0.1";
 
         // mavlink vehicle identifiers
-        uint8_t sim_sysid = 142;
-        int sim_compid = 42;
-        uint8_t offboard_sysid = 134;
-        int offboard_compid = 1;
-        uint8_t vehicle_sysid = 135;
+        uint8_t vehicle_sysid = 1;
         int vehicle_compid = 1;
 
         // if you want to select a specific local network adapter so you can reach certain remote machines (e.g. wifi versus ethernet) 
@@ -90,17 +85,13 @@ public:
 
 public:
     //required for pimpl
-    MavLinkDroneController();
-    virtual ~MavLinkDroneController();
+    ArduPilotDroneController();
+    virtual ~ArduPilotDroneController();
 
-    //non-base interface specific to MavLinKDroneController
+    //non-base interface specific to ArduPilotDroneController
     void initialize(const ConnectionInfo& connection_info, const SensorCollection* sensors, bool is_simulation);
     ConnectionInfo getMavConnectionInfo();
-    static std::string findPX4();
-
-    //TODO: get rid of below methods?
-    void sendImage(unsigned char data[], uint32_t length, uint16_t width, uint16_t height);
-    bool hasVideoRequest();
+    static std::string findArduPilot();
 
     //*** Start: VehicleControllerBase implementation ***//
     virtual void reset() override;
@@ -173,53 +164,47 @@ private:
     std::shared_ptr<mavlinkcom::MavLinkNode> proxy_;
 };
 
-struct MavLinkDroneController::impl {
+struct ArduPilotDroneController::impl {
 public:
-    static const int pixhawkVendorId = 9900;   ///< Vendor ID for Pixhawk board (V2 and V1) and PX4 Flow
+    static const int pixhawkVendorId = 9900;   ///< Vendor ID for Pixhawk board (V2 and V1) and ArduPilot Flow
     static const int pixhawkFMUV4ProductId = 18;     ///< Product ID for Pixhawk V2 board
     static const int pixhawkFMUV2ProductId = 17;     ///< Product ID for Pixhawk V2 board
     static const int pixhawkFMUV2OldBootloaderProductId = 22;     ///< Product ID for Bootloader on older Pixhawk V2 boards
-    static const int pixhawkFMUV1ProductId = 16;     ///< Product ID for PX4 FMU V1 board
+    static const int pixhawkFMUV1ProductId = 16;     ///< Product ID for ArduPilot FMU V1 board
     static const int RotorControlsCount = 8;
     static const int messageReceivedTimeout = 10; ///< Seconds 
 
-    std::shared_ptr<mavlinkcom::MavLinkNode> logviewer_proxy_, logviewer_out_proxy_, qgc_proxy_;
+    std::shared_ptr<mavlinkcom::MavLinkNode> logviewer_proxy_, logviewer_out_proxy_, gcs_proxy_;
 
     size_t status_messages_MaxSize = 5000;
 
-    std::shared_ptr<mavlinkcom::MavLinkNode> hil_node_;
+    std::shared_ptr<mavlinkcom::MavLinkNode> node_;
     std::shared_ptr<mavlinkcom::MavLinkConnection> connection_;
-    std::shared_ptr<mavlinkcom::MavLinkVideoServer> video_server_;
     std::shared_ptr<DroneControllerBase> mav_vehicle_control_;
 
     mavlinkcom::MavLinkAttPosMocap MocapPoseMessage;
     mavlinkcom::MavLinkHeartbeat HeartbeatMessage;
     mavlinkcom::MavLinkSetMode SetModeMessage;
     mavlinkcom::MavLinkStatustext StatusTextMessage;
-    mavlinkcom::MavLinkHilControls HilControlsMessage;
-    mavlinkcom::MavLinkHilActuatorControls HilActuatorControlsMessage;
+
     mavlinkcom::MavLinkCommandLong CommandLongMessage;
 
-    mavlinkcom::MavLinkHilSensor last_sensor_message_;
     mavlinkcom::MavLinkDistanceSensor last_distance_message_;
-    mavlinkcom::MavLinkHilGps last_gps_message_;
 
-    std::mutex mocap_pose_mutex_, heartbeat_mutex_, set_mode_mutex_, status_text_mutex_, hil_controls_mutex_, last_message_mutex_;
-    MavLinkDroneController* parent_;
+    std::mutex mocap_pose_mutex_, heartbeat_mutex_, set_mode_mutex_, status_text_mutex_, last_message_mutex_;
+    ArduPilotDroneController* parent_;
 
-    impl(MavLinkDroneController* parent)
+    impl(ArduPilotDroneController* parent)
         : parent_(parent)
     {
     }
 
     //variables required for VehicleControllerBase implementation
     ConnectionInfo connection_info_;
-    bool is_any_heartbeat_, is_hil_mode_set_, is_armed_;
+    bool is_any_heartbeat_, is_armed_;
     bool is_controls_0_1_; //Are motor controls specified in 0..1 or -1..1?
     float rotor_controls_[RotorControlsCount];
     std::queue<std::string> status_messages_;
-    int hil_state_freq_;
-    bool actuators_message_supported_;
     const SensorCollection* sensors_;    //this is optional
     uint64_t last_gps_time_;
     bool was_reset_;
@@ -236,7 +221,6 @@ public:
     bool is_api_control_enabled_;
     bool is_simulation_mode_;
     PidController thrust_controller_;
-    common_utils::Timer hil_message_timer_;
     common_utils::Timer sitl_message_timer_;
 
     void initialize(const ConnectionInfo& connection_info, const SensorCollection* sensors, bool is_simulation)
@@ -270,7 +254,7 @@ public:
     void normalizeRotorControls()
     {
         //if rotor controls are in not in 0-1 range then they are in -1 to 1 range in which case
-        //we normalize them to 0 to 1 for PX4
+        //we normalize them to 0 to 1
         if (!is_controls_0_1_) {
             // change -1 to 1 to 0 to 1.
             for (size_t i = 0; i < Utils::length(rotor_controls_); ++i) {
@@ -278,7 +262,6 @@ public:
             }
         }
         else {
-            //this applies to PX4 and may work differently on other firmwares. 
             //We use 0.2 as idle rotors which leaves out range of 0.8
             for (size_t i = 0; i < Utils::length(rotor_controls_); ++i) {
                 rotor_controls_[i] = Utils::clip(0.8f * rotor_controls_[i] + 0.20f, 0.0f, 1.0f);
@@ -290,7 +273,6 @@ public:
     {
         if (connection_ != nullptr && mav_vehicle_ != nullptr) {
             is_any_heartbeat_ = false;
-            is_hil_mode_set_ = false;
             is_armed_ = false;
             is_controls_0_1_ = true;
             Utils::setValue(rotor_controls_, 0.0f);
@@ -315,7 +297,7 @@ public:
         try {
             // try and send a test message.
             mavlinkcom::MavLinkHeartbeat test;
-            test.autopilot = static_cast<int>(mavlinkcom::MAV_AUTOPILOT::MAV_AUTOPILOT_PX4);
+            test.autopilot = static_cast<int>(mavlinkcom::MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA);
             test.type = static_cast<uint8_t>(mavlinkcom::MAV_TYPE::MAV_TYPE_GCS);
             test.base_mode = 0;
             test.custom_mode = 0;
@@ -359,13 +341,13 @@ public:
 
     bool connectToQGC()
     {
-        if (connection_info_.qgc_ip_address.size() > 0) {
+        if (connection_info_.gcs_ip_address.size() > 0) {
             std::shared_ptr<mavlinkcom::MavLinkConnection> connection;
-            createProxy("QGC", connection_info_.qgc_ip_address, connection_info_.qgc_ip_port, connection_info_.local_host_ip, qgc_proxy_, connection);
-            if (!sendTestMessage(qgc_proxy_)) {
+            createProxy("GCS", connection_info_.gcs_ip_address, connection_info_.gcs_ip_port, connection_info_.local_host_ip, gcs_proxy_, connection);
+            if (!sendTestMessage(gcs_proxy_)) {
                 // error talking to QGC, so don't keep trying, and close the connection also.
-                qgc_proxy_->getConnection()->close();
-                qgc_proxy_ = nullptr;
+                gcs_proxy_->getConnection()->close();
+                gcs_proxy_ = nullptr;
             }
             else {
                 connection->subscribe([=](std::shared_ptr<mavlinkcom::MavLinkConnection> connection_val, const mavlinkcom::MavLinkMessage& msg) {
@@ -374,7 +356,7 @@ public:
                 });
             }
         }
-        return qgc_proxy_ != nullptr;
+        return gcs_proxy_ != nullptr;
     }
 
 
@@ -382,17 +364,17 @@ public:
         std::shared_ptr<mavlinkcom::MavLinkNode>& node, std::shared_ptr<mavlinkcom::MavLinkConnection>& connection)
     {
         if (connection_ == nullptr)
-            throw std::domain_error("MavLinkDroneController requires connection object to be set before createProxy call");
+            throw std::domain_error("ArduPilotDroneController requires connection object to be set before createProxy call");
 
         connection = mavlinkcom::MavLinkConnection::connectRemoteUdp("Proxy to: " + name + " at " + ip + ":" + std::to_string(port), local_host_ip, ip, port);
 
         // it is ok to reuse the simulator sysid and compid here because this node is only used to send a few messages directly to this endpoint
-        // and all other messages are funnelled through from PX4 via the Join method below.
+        // and all other messages are funnelled through from ArduPilot via the Join method below.
         node = std::make_shared<mavlinkcom::MavLinkNode>(connection_info_.sim_sysid, connection_info_.sim_compid);
         node->connect(connection);
 
-        // now join the main connection to this one, this causes all PX4 messages to be sent to the proxy and all messages from the proxy will be
-        // send directly to the PX4 (using whatever sysid/compid comes from that remote node).
+        // now join the main connection to this one, this causes all ArduPilot messages to be sent to the proxy and all messages from the proxy will be
+        // send directly to the ArduPilot (using whatever sysid/compid comes from that remote node).
         connection_->join(connection);
 
         auto mavcon = mav_vehicle_->getConnection();
@@ -401,7 +383,7 @@ public:
         }
     }
 
-    static std::string findPX4()
+    static std::string findArduPilot()
     {
         auto result = mavlinkcom::MavLinkConnection::findSerialPorts(0, 0);
         for (auto iter = result.begin(); iter != result.end(); iter++)
@@ -413,7 +395,7 @@ public:
                     (info.pid == pixhawkFMUV4ProductId || info.pid == pixhawkFMUV2ProductId || info.pid == pixhawkFMUV2OldBootloaderProductId)
                     ) ||
                     (
-                (info.displayName.find(L"PX4_") != std::string::npos)
+                (info.displayName.find(L"ArduPilot_") != std::string::npos)
                         )
                 )
             {
@@ -453,7 +435,7 @@ public:
         if (port == 0) {
             throw std::invalid_argument("UdpPort setting has an invalid value.");
         }
-
+//TODO : finish from here
         addStatusMessage(Utils::stringf("Connecting to UDP port %d, local IP %s, remote IP...", port, connection_info_.local_host_ip.c_str(), ip.c_str()));
         connection_ = mavlinkcom::MavLinkConnection::connectRemoteUdp("hil", connection_info_.local_host_ip, ip, port);
         hil_node_ = std::make_shared<mavlinkcom::MavLinkNode>(connection_info_.sim_sysid, connection_info_.sim_compid);
@@ -463,9 +445,9 @@ public:
         mav_vehicle_ = std::make_shared<mavlinkcom::MavLinkVehicle>(connection_info_.vehicle_sysid, connection_info_.vehicle_compid);
 
         if (connection_info_.sitl_ip_address != "" && connection_info_.sitl_ip_port != 0 && connection_info_.sitl_ip_port != port) {
-            // bugbug: the PX4 SITL mode app cannot receive commands to control the drone over the same mavlink connection
+            // bugbug: the ArduPilot SITL mode app cannot receive commands to control the drone over the same mavlink connection
             // as the HIL_SENSOR messages, we must establish a separate mavlink channel for that so that DroneShell works.
-            addStatusMessage(Utils::stringf("Connecting to PX4 SITL UDP port %d, local IP %s, remote IP...",
+            addStatusMessage(Utils::stringf("Connecting to ArduPilot SITL UDP port %d, local IP %s, remote IP...",
                 connection_info_.sitl_ip_port, connection_info_.local_host_ip.c_str(), connection_info_.sitl_ip_address.c_str()));
 
             auto sitlconnection = mavlinkcom::MavLinkConnection::connectRemoteUdp("sitl",
@@ -487,26 +469,26 @@ public:
 
         std::string port_name_auto = port_name;
         if (port_name_auto == "" || port_name_auto == "*") {
-            port_name_auto = findPX4();
+            port_name_auto = findArduPilot();
             if (port_name_auto == "") {
-                throw std::domain_error("Could not detect a connected PX4 flight controller on any USB ports. You can specify USB port in settings.json.");
+                throw std::domain_error("Could not detect a connected ArduPilot flight controller on any USB ports. You can specify USB port in settings.json.");
             }
         }
 
         if (port_name_auto == "") {
-            throw std::invalid_argument("USB port for PX4 flight controller is empty. Please set it in settings.json.");
+            throw std::invalid_argument("USB port for ArduPilot flight controller is empty. Please set it in settings.json.");
         }
 
         if (baud_rate == 0) {
             throw std::invalid_argument("Baud rate specified in settings.json is 0 which is invalid");
         }
 
-        addStatusMessage(Utils::stringf("Connecting to PX4 over serial port: %s, baud rate %d ....", port_name_auto.c_str(), baud_rate));
+        addStatusMessage(Utils::stringf("Connecting to ArduPilot over serial port: %s, baud rate %d ....", port_name_auto.c_str(), baud_rate));
         connection_ = mavlinkcom::MavLinkConnection::connectSerial("hil", port_name_auto, baud_rate);
         connection_->ignoreMessage(mavlinkcom::MavLinkAttPosMocap::kMessageId); //TODO: find better way to communicate debug pose instead of using fake Mocap messages
         hil_node_ = std::make_shared<mavlinkcom::MavLinkNode>(connection_info_.sim_sysid, connection_info_.sim_compid);
         hil_node_->connect(connection_);
-        addStatusMessage("Connected to PX4 over serial port.");
+        addStatusMessage("Connected to ArduPilot over serial port.");
 
         mav_vehicle_ = std::make_shared<mavlinkcom::MavLinkVehicle>(connection_info_.vehicle_sysid, connection_info_.vehicle_compid);
         mav_vehicle_->connect(connection_); // in this case we can use the same connection.
@@ -572,9 +554,9 @@ public:
             setArmed(armed);
             if (!is_any_heartbeat_) {
                 is_any_heartbeat_ = true;
-                if (HeartbeatMessage.autopilot == static_cast<uint8_t>(mavlinkcom::MAV_AUTOPILOT::MAV_AUTOPILOT_PX4) &&
+                if (HeartbeatMessage.autopilot == static_cast<uint8_t>(mavlinkcom::MAV_AUTOPILOT::MAV_AUTOPILOT_ArduPilot) &&
                     HeartbeatMessage.type == static_cast<uint8_t>(mavlinkcom::MAV_TYPE::MAV_TYPE_FIXED_WING)) {
-                    // PX4 will scale fixed wing servo outputs to -1 to 1
+                    // ArduPilot will scale fixed wing servo outputs to -1 to 1
                     // and it scales multi rotor servo outpus to 0 to 1.
                     is_controls_0_1_ = false;
                 }
@@ -960,9 +942,9 @@ public:
             logviewer_out_proxy_ = nullptr;
         }
 
-        if (qgc_proxy_ != nullptr) {
-            qgc_proxy_->close();
-            qgc_proxy_ = nullptr;
+        if (gcs_proxy_ != nullptr) {
+            gcs_proxy_->close();
+            gcs_proxy_ = nullptr;
         }
         if (mav_vehicle_ != nullptr) {
             mav_vehicle_->close();
@@ -1222,7 +1204,7 @@ public:
     }
     float getTakeoffZ()
     {
-        // pick a number, PX4 doesn't have a fixed limit here, but 3 meters is probably safe 
+        // pick a number, ArduPilot doesn't have a fixed limit here, but 3 meters is probably safe 
         // enough to get out of the backwash turbulance.  Negative due to NED coordinate system.
         return -3.0f;
     }
@@ -1232,7 +1214,7 @@ public:
     }
     const VehicleParams& getVehicleParams()
     {
-        return getInternalVehicleParams(); //defaults are good for PX4 generic quadrocopter.
+        return getInternalVehicleParams(); //defaults are good for ArduPilot generic quadrocopter.
     }
     //TODO: decouple DroneControllerBase, VehicalParams and SafetyEval
     const VehicleParams& getInternalVehicleParams()
@@ -1310,7 +1292,7 @@ public:
     void endOffboardMode()
     {
         // bugbug: I removed this releaseControl because it makes back-to-back move operations less smooth.
-        // The side effect of this is that with some drones (e.g. PX4 based) the drone itself will timeout
+        // The side effect of this is that with some drones (e.g. ArduPilot based) the drone itself will timeout
         // when you stop sending move commands and the behavior on timeout is then determined by the drone itself.
         // mav_vehicle_->releaseControl();
         ensureSafeMode();
@@ -1344,64 +1326,64 @@ public:
 }; //impl
 
    //empty constructor required for pimpl
-MavLinkDroneController::MavLinkDroneController()
+ArduPilotDroneController::ArduPilotDroneController()
 {
     pimpl_.reset(new impl(this));
 }
 
-MavLinkDroneController::~MavLinkDroneController()
+ArduPilotDroneController::~ArduPilotDroneController()
 {
     pimpl_->closeAllConnection();
 }
 
-void MavLinkDroneController::initialize(const ConnectionInfo& connection_info, const SensorCollection* sensors, bool is_simulation)
+void ArduPilotDroneController::initialize(const ConnectionInfo& connection_info, const SensorCollection* sensors, bool is_simulation)
 {
     pimpl_->initialize(connection_info, sensors, is_simulation);
 }
 
-MavLinkDroneController::ConnectionInfo MavLinkDroneController::getMavConnectionInfo()
+ArduPilotDroneController::ConnectionInfo ArduPilotDroneController::getMavConnectionInfo()
 {
     return pimpl_->getMavConnectionInfo();
 }
-void MavLinkDroneController::sendImage(unsigned char data[], uint32_t length, uint16_t width, uint16_t height)
+void ArduPilotDroneController::sendImage(unsigned char data[], uint32_t length, uint16_t width, uint16_t height)
 {
     pimpl_->sendImage(data, length, width, height);
 }
 
-bool MavLinkDroneController::hasVideoRequest()
+bool ArduPilotDroneController::hasVideoRequest()
 {
     return pimpl_->hasVideoRequest();
 }
-std::string MavLinkDroneController::findPX4()
+std::string ArduPilotDroneController::findArduPilot()
 {
-    return impl::findPX4();
+    return impl::findArduPilot();
 }
 
 
 //*** Start: VehicleControllerBase implementation ***//
-void MavLinkDroneController::reset()
+void ArduPilotDroneController::reset()
 {
     DroneControllerBase::reset();
     pimpl_->reset();
 }
-void MavLinkDroneController::update()
+void ArduPilotDroneController::update()
 {
     DroneControllerBase::update();
     pimpl_->update();
 }
-real_T MavLinkDroneController::getVertexControlSignal(unsigned int rotor_index)
+real_T ArduPilotDroneController::getVertexControlSignal(unsigned int rotor_index)
 {
     return pimpl_->getVertexControlSignal(rotor_index);
 }
-size_t MavLinkDroneController::getVertexCount()
+size_t ArduPilotDroneController::getVertexCount()
 {
     return impl::RotorControlsCount;
 }
-void MavLinkDroneController::getStatusMessages(std::vector<std::string>& messages)
+void ArduPilotDroneController::getStatusMessages(std::vector<std::string>& messages)
 {
     pimpl_->getStatusMessages(messages);
 }
-bool MavLinkDroneController::isAvailable(std::string& message)
+bool ArduPilotDroneController::isAvailable(std::string& message)
 {
     return pimpl_->isAvailable(message);
 }
@@ -1411,146 +1393,146 @@ bool MavLinkDroneController::isAvailable(std::string& message)
 
 
 //DroneControlBase
-Kinematics::State MavLinkDroneController::getKinematicsEstimated()
+Kinematics::State ArduPilotDroneController::getKinematicsEstimated()
 {
     return pimpl_->getKinematicsEstimated();
 }
 
-Vector3r MavLinkDroneController::getPosition()
+Vector3r ArduPilotDroneController::getPosition()
 {
     return pimpl_->getPosition();
 }
 
-Vector3r MavLinkDroneController::getVelocity()
+Vector3r ArduPilotDroneController::getVelocity()
 {
     return pimpl_->getVelocity();
 }
 
-Quaternionr MavLinkDroneController::getOrientation()
+Quaternionr ArduPilotDroneController::getOrientation()
 {
     return pimpl_->getOrientation();
 }
 
-GeoPoint MavLinkDroneController::getHomeGeoPoint()
+GeoPoint ArduPilotDroneController::getHomeGeoPoint()
 {
     return pimpl_->getHomeGeoPoint();
 }
 
-GeoPoint MavLinkDroneController::getGpsLocation()
+GeoPoint ArduPilotDroneController::getGpsLocation()
 {
     return pimpl_->getGpsLocation();
 }
 
-DroneControllerBase::LandedState MavLinkDroneController::getLandedState()
+DroneControllerBase::LandedState ArduPilotDroneController::getLandedState()
 {
     return pimpl_->getLandedState();
 }
 //administrative
 
-bool MavLinkDroneController::armDisarm(bool arm, CancelableBase& cancelable_action)
+bool ArduPilotDroneController::armDisarm(bool arm, CancelableBase& cancelable_action)
 {
     return pimpl_->armDisarm(arm, cancelable_action);
 }
 
 
-void MavLinkDroneController::enableApiControl(bool is_enabled)
+void ArduPilotDroneController::enableApiControl(bool is_enabled)
 {
     pimpl_->enableApiControl(is_enabled);
 }
-void MavLinkDroneController::setSimulationMode(bool is_set)
+void ArduPilotDroneController::setSimulationMode(bool is_set)
 {
     pimpl_->setSimulationMode(is_set);
 }
-bool MavLinkDroneController::isApiControlEnabled()
+bool ArduPilotDroneController::isApiControlEnabled()
 {
     return pimpl_->isApiControlEnabled();
 }
-bool MavLinkDroneController::isSimulationMode()
+bool ArduPilotDroneController::isSimulationMode()
 {
     return pimpl_->isSimulationMode();
 }
 
-bool MavLinkDroneController::takeoff(float max_wait_seconds, CancelableBase& cancelable_action)
+bool ArduPilotDroneController::takeoff(float max_wait_seconds, CancelableBase& cancelable_action)
 {
     return pimpl_->takeoff(max_wait_seconds, cancelable_action);
 }
 
-bool MavLinkDroneController::hover(CancelableBase& cancelable_action)
+bool ArduPilotDroneController::hover(CancelableBase& cancelable_action)
 {
     return pimpl_->hover(cancelable_action);
 }
 
-bool MavLinkDroneController::land(float max_wait_seconds, CancelableBase& cancelable_action)
+bool ArduPilotDroneController::land(float max_wait_seconds, CancelableBase& cancelable_action)
 {
     return pimpl_->land(max_wait_seconds, cancelable_action);
 }
 
-bool MavLinkDroneController::goHome(CancelableBase& cancelable_action)
+bool ArduPilotDroneController::goHome(CancelableBase& cancelable_action)
 {
     return pimpl_->goHome(cancelable_action);
 }
 
-void MavLinkDroneController::commandRollPitchZ(float pitch, float roll, float z, float yaw)
+void ArduPilotDroneController::commandRollPitchZ(float pitch, float roll, float z, float yaw)
 {
     return pimpl_->commandRollPitchZ(pitch, roll, z, yaw);
 }
-void MavLinkDroneController::commandVelocity(float vx, float vy, float vz, const YawMode& yaw_mode)
+void ArduPilotDroneController::commandVelocity(float vx, float vy, float vz, const YawMode& yaw_mode)
 {
     return pimpl_->commandVelocity(vx, vy, vz, yaw_mode);
 }
-void MavLinkDroneController::commandVelocityZ(float vx, float vy, float z, const YawMode& yaw_mode)
+void ArduPilotDroneController::commandVelocityZ(float vx, float vy, float z, const YawMode& yaw_mode)
 {
     return pimpl_->commandVelocityZ(vx, vy, z, yaw_mode);
 }
-void MavLinkDroneController::commandPosition(float x, float y, float z, const YawMode& yaw_mode)
+void ArduPilotDroneController::commandPosition(float x, float y, float z, const YawMode& yaw_mode)
 {
     return pimpl_->commandPosition(x, y, z, yaw_mode);
 }
 
-RCData MavLinkDroneController::getRCData()
+RCData ArduPilotDroneController::getRCData()
 {
     return pimpl_->getRCData();
 }
-void MavLinkDroneController::setRCData(const RCData& rcData)
+void ArduPilotDroneController::setRCData(const RCData& rcData)
 {
     return pimpl_->setRCData(rcData);
 }
 
-bool MavLinkDroneController::loopCommandPre()
+bool ArduPilotDroneController::loopCommandPre()
 {
     return pimpl_->loopCommandPre();
 }
 
-void MavLinkDroneController::loopCommandPost()
+void ArduPilotDroneController::loopCommandPost()
 {
     pimpl_->loopCommandPost();
 }
 
 //drone parameters
-float MavLinkDroneController::getCommandPeriod()
+float ArduPilotDroneController::getCommandPeriod()
 {
     return pimpl_->getCommandPeriod();
 }
-float MavLinkDroneController::getTakeoffZ()
+float ArduPilotDroneController::getTakeoffZ()
 {
     return pimpl_->getTakeoffZ();
 }
-float MavLinkDroneController::getDistanceAccuracy()
+float ArduPilotDroneController::getDistanceAccuracy()
 {
     return pimpl_->getDistanceAccuracy();
 }
-const VehicleParams& MavLinkDroneController::getVehicleParams()
+const VehicleParams& ArduPilotDroneController::getVehicleParams()
 {
     return pimpl_->getVehicleParams();
 }
 //TODO: decouple DroneControllerBase, VehicalParams and SafetyEval
 
-void MavLinkDroneController::reportTelemetry(float renderTime)
+void ArduPilotDroneController::reportTelemetry(float renderTime)
 {
     return pimpl_->reportTelemetry(renderTime);
 }
 
-Pose MavLinkDroneController::getDebugPose()
+Pose ArduPilotDroneController::getDebugPose()
 {
     return pimpl_->getDebugPose();
 }

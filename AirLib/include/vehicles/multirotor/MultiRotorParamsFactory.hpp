@@ -24,6 +24,8 @@ public:
 
         if (vehicle_settings.firmware_name == "PX4") {
             config.reset(new Px4MultiRotor(vehicle_settings, sensor_factory));
+        } else if (vehicle_settings.firmware_name == "ArduPilot") {
+            config.reset(new ArduPilotMultiRotor(vehicle_settings, sensor_factory));
         } else if (vehicle_settings.firmware_name == "RosFlight") {
             config.reset(new RosFlightQuadX(vehicle_settings, sensor_factory));
         } else if (vehicle_settings.firmware_name == "SimpleFlight") {

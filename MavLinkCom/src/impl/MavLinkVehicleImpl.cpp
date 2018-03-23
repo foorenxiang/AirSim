@@ -791,39 +791,43 @@ AsyncResult<bool> MavLinkVehicleImpl::setHomePosition(float lat, float lon, floa
 AsyncResult<bool> MavLinkVehicleImpl::setMissionMode()
 {
     int request_mode;
+    int sub_mode;
     switch (heartbeat.autopilot) {
         case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
-            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL);
+            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO);
+            sub_mode = static_cast<int>(PX4_CUSTOM_SUB_MODE_AUTO_MISSION);
             break;
         }
         case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
-            request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_LOITER);
+            request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_AUTO);
             break;
         }
-    }//TODO
+    }
     return setMode(static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED) |
         static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_AUTO_ENABLED),
-        static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO),
-        static_cast<int>(PX4_CUSTOM_SUB_MODE_AUTO_MISSION));
+                   request_mode,
+                   sub_mode);
 }
 
 
 AsyncResult<bool> MavLinkVehicleImpl::loiter()
 {
     int request_mode;
+    int sub_mode;
     switch (heartbeat.autopilot) {
         case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_PX4): {
-            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_POSCTL);
+            request_mode = static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO);
+            sub_mode = static_cast<int>(PX4_CUSTOM_SUB_MODE_AUTO_LOITER);
             break;
         }
         case static_cast<uint8_t>(MAV_AUTOPILOT::MAV_AUTOPILOT_ARDUPILOTMEGA): {
             request_mode = static_cast<int>(ARDUPILOT_COPTER_MODE_LOITER);
             break;
         }
-    }//TODO
+    }
     return setMode(static_cast<int>(MAV_MODE_FLAG::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
-        static_cast<int>(PX4_CUSTOM_MAIN_MODE_AUTO),
-        static_cast<int>(PX4_CUSTOM_SUB_MODE_AUTO_LOITER));
+                   request_mode,
+                   sub_mode);
 }
 
 bool MavLinkVehicleImpl::isLocalControlSupported()

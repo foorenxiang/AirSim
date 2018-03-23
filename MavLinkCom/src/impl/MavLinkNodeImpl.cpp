@@ -130,7 +130,7 @@ AsyncResult<MavLinkAutopilotVersion> MavLinkNodeImpl::getCapabilities()
 
 AsyncResult<MavLinkHeartbeat>  MavLinkNodeImpl::waitForHeartbeat()
 {
-    Utils::log("Waiting for heartbeat from PX4...");
+    Utils::log("Waiting for heartbeat from MAVLink Vehicle...");
 
     // wait for a heartbeat msg since this will give us the port to send commands to...
     //this->setMessageInterval(static_cast<int>(MavLinkMessageIds::MAVLINK_MSG_ID_HEARTBEAT), 1);
@@ -349,7 +349,7 @@ std::vector<MavLinkParameter> MavLinkNodeImpl::getParamList()
             result.push_back(r);
         }
         else {
-            Utils::log(Utils::stringf("Paremter %d does not seem to exist", index), Utils::kLogLevelWarn);
+            Utils::log(Utils::stringf("Parameter %d does not seem to exist", index), Utils::kLogLevelWarn);
         }
     }
 
